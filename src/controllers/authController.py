@@ -49,21 +49,20 @@ async def login_user_api(request: Request, response: Response, email: str, passw
     )
     return res
 
-async def logout_user_api(request: Request, response: Response):
-    # 1) Read session cookie
+async def logout_user_api(request: Request):
+    # 1) Invalidate the server‑side session
     session_token = request.cookies.get("session")
     if session_token:
-        # 2) Remove token in threadpool
         await run_in_threadpool(
             users_collection.update_one,
             {"sessionToken": session_token},
             {"$set": {"sessionToken": None}}
         )
 
-    # 3) Clear cookies
+    # 2) Return a response that deletes every cookie at path="/"
     res = JSONResponse({"message": "Logout successful"})
-    res.delete_cookie("session")
-    res.delete_cookie("access_token")
-    res.delete_cookie("X-Chainlit-Session-id")
-    res.delete_cookie("x-user-id", path="/")
+    res.delete_cookie("session",           path="/")
+    res.delete_cookie("x-user-id",         path="/")
+    res.delete_cookie("X-Chainlit-Session-id", path="/")
+    res.delete_cookie("access_token",      path="/")
     return res
