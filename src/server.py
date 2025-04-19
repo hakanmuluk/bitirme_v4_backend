@@ -18,6 +18,7 @@ if __name__ == "__main__":
         "server:app",
         host="0.0.0.0",
         port=PORT,
-        reload=True           # optional, for dev
+        reload=True,           # optional, for dev
+        proxy_headers=True
     )
 
