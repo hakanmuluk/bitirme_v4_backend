@@ -11,7 +11,7 @@ app = FastAPI()
 # Middleware: Enable CORS for all origins (adjust as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  
+    allow_origins=["http://localhost:5173", "https://investmenthelper-ai.up.railway.app/", "https://investmenthelper-ai.up.railway.app"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
