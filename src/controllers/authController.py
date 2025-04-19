@@ -39,12 +39,13 @@ async def login_user_api(request: Request, response: Response, email: str, passw
     # 4) Return response with cookie
     res = JSONResponse({"message": "Login successful!"})
     res.set_cookie(
-        key="session",
-        value=session_token,
-        httponly=True,
-        secure=False,      # set True in prod
-        samesite="strict",
-        max_age=3600
+      key="session",
+      value=session_token,
+      httponly=True,     # keep JS from reading it
+      secure=True,       # required on HTTPS (Railway)
+      samesite="None",   # allow it to be sent on cross‑site fetch/ajax
+      max_age=3600,
+      path="/"
     )
     return res
 
