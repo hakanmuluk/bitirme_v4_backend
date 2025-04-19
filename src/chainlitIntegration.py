@@ -48,10 +48,9 @@ def add_chainlit_routes(app):
             key="x-user-id",
             value=email,
             httponly=True,
-            secure=False,         # Set True in production with HTTPS
-            samesite="Lax",
-            path="/",
-            domain="investmenthelper-ai-backend.up.railway.app"    # In production, update this to your domain
+            secure=True,         # Set True in production with HTTPS
+            samesite="None",
+            path="/"
         )
         return response
 
