@@ -39,7 +39,7 @@ def classify(message_text: str) -> str:
     )
     return response.choices[0].message.content.strip().upper()
 
-API_BASE_URL = "investmenthelper-ai-backend.up.railway.app" # Replace with your actual API base URL
+API_BASE_URL = "https://investmenthelper-ai-backend.up.railway.app" # Replace with your actual API base URL
 async def post_notification(text: str, user_email: str):
     url      = f"{API_BASE_URL}/api/notification/save"
     payload  = {"text": text}
