@@ -1,14 +1,14 @@
 # routes/logout_route.py
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request
 from controllers.authController import logout_user_api
 
 router = APIRouter()
 
-@router.get("/logout")
-async def logout(request: Request, response: Response):
+@router.post("/logout", tags=["auth"])
+async def logout(request: Request):
     """
     API endpoint to log out the current user.
-    It calls the controller function to clear the session and returns a redirect response.
+    Calls the controller function to clear cookies and session.
     """
-    return await logout_user_api(request, response)
+    return await logout_user_api(request)
