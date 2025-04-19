@@ -49,7 +49,7 @@ def add_chainlit_routes(app):
             value=email,
             httponly=True,
             secure=True,         # Set True in production with HTTPS
-            samesite="None",
+            samesite="Lax",
             path="/"
         )
         return response
