@@ -13,6 +13,6 @@ bist100 = {
         }
     },
     "BIST & Currencies": {
-        "tickers": ["USDTRY=X", "EURTRY=X", "XU100.IS"]
+        "tickers": ["USDTRY=X", "EURTRY=X", "GBPTRY=X", "XU100.IS"]
     }
 }
