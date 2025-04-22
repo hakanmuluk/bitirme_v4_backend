@@ -38,11 +38,11 @@ async def on_chat_start():
     user = cl.user_session.get("user")
     user_email = user.identifier if user else "Guest"
     cl.user_session.set("user_email", user_email)
-    await cl.Message(content=f"Welcome! Your account email: {user_email}").send()
+    return
 
 @cl.on_chat_resume
 async def on_chat_resume():
-    await cl.Message(content="Resuming your previous conversation...").send()
+    return
 
 """ @cl.on_message
 async def on_message(message):
