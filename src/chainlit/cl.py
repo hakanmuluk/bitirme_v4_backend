@@ -118,7 +118,7 @@ async def on_message(message):
         await cl.Message(content=f"🚨 An error occurred: {e}", author="System").send()  """
 
 @cl.on_message
-async def on_message(message):
+async def on_message(message : cl.Message):
     """
     Handles incoming chat messages by streaming each pipeline step
     while offloading processing to a thread pool.

@@ -72,4 +72,4 @@ def add_chainlit_routes(app):
     # Use Chainlit’s utility function to mount Chainlit under the desired path.
     # Ensure that "cl.py" is the correct target for Chainlit in your setup.
     from chainlit.utils import mount_chainlit
-    mount_chainlit(app=app, target="src/chainlit/cl.py", path="/chainlit")
+    mount_chainlit(app=app, target=r"chainlit\cl.py", path="/chainlit")

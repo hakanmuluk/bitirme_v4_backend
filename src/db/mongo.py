@@ -11,9 +11,11 @@ mongo_uri = getenv("MONGODB_URI")
 if not mongo_uri:
     raise RuntimeError("MONGODB_URI env var not set")
 
-# create your client with the secret kept out of source
 mongo_client = MongoClient(mongo_uri)
 db = mongo_client["chatbot_db"]
+reportDB = mongo_client["report_db"]
+
+
 users_collection = db["users"]
 notifications_collection = db["notifications"]
 tree_collection = db["tree"]   

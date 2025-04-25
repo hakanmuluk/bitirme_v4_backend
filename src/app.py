@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import stockRoute, currencyRoute, loginRoute, logoutRoute, favoriteRoute, viewForestRoute, processNotificationRoute, saveNotificationRoute  # Import your route modules
+from routes import stockRoute, currencyRoute, loginRoute, logoutRoute, favoriteRoute, viewForestRoute, processNotificationRoute, saveNotificationRoute, reportRoute  # Import your route modules
 from db.mongo import db  # Import the shared database from db.py
 from chainlitIntegration import add_chainlit_routes
 
@@ -26,5 +26,6 @@ app.include_router(logoutRoute.router, prefix="/api")
 app.include_router(processNotificationRoute.router, prefix="/api/notification")
 app.include_router(saveNotificationRoute.router, prefix="/api/notification")
 app.include_router(viewForestRoute.router, prefix="/api/forest")
+app.include_router(reportRoute.router, prefix="/api/report")
 
 add_chainlit_routes(app)
