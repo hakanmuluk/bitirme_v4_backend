@@ -261,7 +261,7 @@ def classifyAndDecompose(question: str):
     </example>
 
     <example>
-    Q: Give me the 2024 revenueand net profit margin of Ereğli Demir Çelik.
+    Q: Give me the 2024 revenue and net profit margin of Ereğli Demir Çelik.
     A:
     {
     "type": "composition",
