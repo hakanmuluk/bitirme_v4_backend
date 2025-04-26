@@ -91,7 +91,7 @@ def relevancyCheck(state: GraphState) -> GraphState:
     query = state["englishUserQuery"]
     valid = []
     with ThreadPoolExecutor() as exe:
-        futures = {exe.submit(relevancy_Check, d, query): d for d in docs}
+        futures = {exe.submit(relevancy_Check, d, state["decomposedQueries"], state["englishUserQuery"], state["isDecomposed"]): d for d in docs}
         for fut in futures:
             d = futures[fut]
             try:
@@ -123,6 +123,7 @@ def supportednessCheck(state: GraphState) -> GraphState:
         )
     state["comeFrom"] = "supCheck"
     return state
+
 
 def translateToTurkish(state: GraphState) -> GraphState:
     state["turkishAnswer"] = translateTurkish(state["answerGenerated"])
