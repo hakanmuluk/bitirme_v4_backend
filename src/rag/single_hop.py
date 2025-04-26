@@ -11,7 +11,8 @@ from .prompts import (
     relevancy_Check,
     generate_answer,
     checkSupported,
-    decomposeToSubqueries
+    decomposeToSubqueries,
+    simpleDecompose
 )
 from .retrieval import (
     retrieveForSingleHop,
@@ -31,10 +32,12 @@ if not uri or not username or not password:
 
 driver = GraphDatabase.driver(uri, auth=(username, password))
 
+
 class GraphState(TypedDict):
     userQuery: str
     rephrasedUserQuery: str
     englishUserQuery: str
+    questionType: str
     retrievedDocs: list[str]
     relevantDocs: list[str]
     pastMessages: list[str]
@@ -43,6 +46,8 @@ class GraphState(TypedDict):
     turkishAnswer: str
     isDecomposed: bool
     decomposedQueries: list[str]
+    bridgeTemplate: Optional[str]
+    bridgeResolved: bool
     answerNotFound: bool
     comeFrom: str
     finalAnswer: str
@@ -77,6 +82,8 @@ def retrieval(state: GraphState) -> GraphState:
             for d in docs:
                 if d not in state["retrievedDocs"]:
                     state["retrievedDocs"].append(d)
+
+    state["comeFrom"] = "retrieval"
     return state
 
 def relevancyCheck(state: GraphState) -> GraphState:
@@ -121,26 +128,69 @@ def translateToTurkish(state: GraphState) -> GraphState:
     state["turkishAnswer"] = translateTurkish(state["answerGenerated"])
     return state
 
+def resolveBridge(state: GraphState) -> GraphState:
+    if state["bridgeResolved"] or state["questionType"] != "bridging":
+        return state                              
+
+    interim = generate_answer(
+        state["retrievedDocs"], state["decomposedQueries"][0]
+    )
+
+    q2 = state["bridgeTemplate"].replace("{answer_to_q1}", interim)
+    state["decomposedQueries"][1] = q2
+
+    docs = retrieveForSingleHop(q2, driver) or \
+           retrieveForSingleHopWithoutFilter(q2, driver)
+    state.setdefault("retrievedDocs", []).extend(
+        [d for d in docs if d not in state["retrievedDocs"]]
+    )
+
+    state["bridgeResolved"] = True
+    state["comeFrom"] = "resolveBridge"
+    return state
+
+
 def decompose(state: GraphState) -> GraphState:
-    state["decomposedQueries"] = decomposeToSubqueries(state["englishUserQuery"])
+    subs = simpleDecompose(state["englishUserQuery"]) 
+    state["decomposedQueries"] = subs
     state["isDecomposed"] = True
     return state
 
+
+def classifyDecomposeQuestion(state: GraphState) -> GraphState:
+    info = decomposeToSubqueries(state["englishUserQuery"])
+    state["questionType"]      = info["type"]
+    state["decomposedQueries"] = info["subquestions"]
+    state["bridgeTemplate"]    = info["bridge_template"]
+    state["isDecomposed"]      = info["type"] != "single"
+    state["bridgeResolved"]    = False
+    return state
+
 def router(state: GraphState) -> list[str]:
-    from .single_hop import get_next_nodes
-    # existing router logic
+
+    if state["questionType"] == "bridging" and not state["bridgeResolved"] and state["comeFrom"] == "retrieval":
+        return ["resolveBridge"]
+
+    if state["questionType"] != "bridging" and state["comeFrom"] == "retrieval":
+        return ["relevancyCheck"]
+
     if state["isDecomposed"] and not state["relevantDocs"] and state["comeFrom"] == "relCheck":
         state["answerNotFound"] = True
         return ["end"]
+    
     if state["isDecomposed"] and not state["isAnswerSupported"] and state["comeFrom"] == "supCheck":
         state["answerNotFound"] = True
         return ["end"]
+    
     if not state["relevantDocs"] and state["comeFrom"] == "relCheck":
         return ["decompose"]
+    
     if not state["isAnswerSupported"] and state["comeFrom"] == "supCheck":
         return ["decompose"]
+    
     if state["comeFrom"] == "relCheck":
         return ["generateAnswer"]
+    
     return ["translateToTurkish"]
 
 def end(state: GraphState) -> GraphState:
@@ -153,18 +203,22 @@ def end(state: GraphState) -> GraphState:
 # Adjacency & runner setup
 ADJACENCY = {
     "rephraseForFollowup": ["translateToEnglish"],
-    "translateToEnglish": ["retrieval"],
-    "retrieval": ["relevancyCheck"],
-    "relevancyCheck": router,
-    "generateAnswer": ["supportednessCheck"],
-    "supportednessCheck": router,
-    "translateToTurkish": ["end"],
-    "decompose": ["retrieval"],
-    "end": []
+    "translateToEnglish":  ["classifyDecomposeQuestion"],
+    "classifyDecomposeQuestion":    ["retrieval"],
+    "retrieval":           router,
+    "relevancyCheck":      router,
+    "resolveBridge":       ["relevancyCheck"],
+    "generateAnswer":      ["supportednessCheck"],
+    "supportednessCheck":  router,
+    "translateToTurkish":  ["end"],
+    "decompose":           ["retrieval"],
+    "end":                 []
 }
+
 NODE_FUNCTIONS = {
     k: globals()[k] for k in (
-        "rephraseForFollowup", "translateToEnglish", "retrieval",
+        "rephraseForFollowup", "translateToEnglish",
+        "classifyDecomposeQuestion", "resolveBridge", "retrieval",
         "relevancyCheck", "generateAnswer", "supportednessCheck",
         "translateToTurkish", "decompose", "end"
     )

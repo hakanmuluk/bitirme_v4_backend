@@ -4,7 +4,7 @@ from neo4j import GraphDatabase
 from datetime import date
 import os
 from dotenv import load_dotenv
-
+import json
 load_dotenv()  # reads .env into os.environ
 
 apiKey = os.getenv("OPENAI_API_KEY")
@@ -13,32 +13,44 @@ if not apiKey:
 
 client = OpenAI(api_key=apiKey)
 
-def rephrase_For_Followup(user_query, past_messages): # will do it tonight
-    today = date.today()
-    formatted_date = today.strftime("%d.%m.%Y")
-    prompt = f"""
-    
-        Given the following conversation between a user and an assistant:
-        {past_messages}
 
-        Current user query: {user_query}
+def rephrase_For_Followup(user_query: str, past_messages: list):
 
+    convo_lines = [
+        f"{m['role'].capitalize()}: {m['content']}"
+        for m in past_messages[:-1]  # skip duplicate of user_query
+    ]
+    conversation = "\n".join(convo_lines)
 
-        Note that today's date is {formatted_date}.
-        Please rephrase the current user query by incorporating any necessary information from the conversation above. 
-        Replace any references to previous messages with the actual information. The rephrased query should be clear and fully self-contained. It's type should not change, that is,
-        declarative (statement), interrogative (question), imperative (command), and exclamatory (interjection and emotional statement).
-        Please output only the rephrased query and nothing else! I repeat, only output the rephrased query. 
+    system_prompt = """
+    You are an expert rephrasing assistant. You will rephrase an user query.
+
+    STRICT RULES
+    1. Restate the last user message as ONE fully self-contained sentence in **Turkish**.
+    2. Replace every pronoun or vague reference (“o”, “bu şirket”, “orası”, etc.) with the correct explicit noun from the conversation (if the information exists).
+    3. Preserve the original intent and sentence type (question, command, statement, exclamation).
+    4. Do NOT add, infer, or remove facts.
+    5. If the user query doesn't need rephrasing, return the original query as is.
+    6. Output EXACTLY one sentence—no extra words, no labels, no line breaks.
+    """.strip()
+
+    user_prompt = f"""
+    Conversation so far:
+    {conversation}
+
+    Current user query:
+    {user_query}
     """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt}
         ],
-        temperature=0.12
+        temperature=0.1
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content.strip()
 
 
 def translateEnglish(text): # will do it tonight
@@ -63,32 +75,50 @@ def translateTurkish(text): # will do it tonight
     )
     return response.choices[0].message.content
 
-def relevancy_Check(doc, query):
-    prompt = f"""Check if a given document might be related with a given question, even if it is partially related, say yes.
-    Note that, the document will be used for generating an answer to the user question so if you think that the document might be used for generating an answers to user's question, say yes.
-    Give a binary score yes or no score to indicate whether the document is relevant to the question.
-    Output only yes or no\n
-    
-    Document: {doc}
-    User Question: {query}
+def relevancy_Check(doc, decomposedQueries, englishUserQuery, isDecomposed): 
+
+    system_prompt = """
+    You are an expert analyst that decides whether a document is relevant to at least one
+    of the given questions. If the document is even PARTIALLY relevant, reply with
+    the single word YES. If it is not relevant at all, reply with the single word NO.
+    Reply in uppercase with no punctuation, explanations, or extra words.
     """
+
+    questions_block = "\n".join(f"- {q}" for q in decomposedQueries)
+
+    if isDecomposed:
+        questions_block += "\n- " + englishUserQuery
+    
+    user_prompt = f"""
+    DOCUMENT:
+    {doc}
+
+    QUESTIONS:
+    {questions_block}
+    """
+
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.12
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
+            temperature=0.1
     )
-    print("????????????????????????????")
-    print(response)
-    print("????????????????????????????")
-    return 'yes' in response.choices[0].message.content.strip().lower()
+
+    answer = response.choices[0].message.content.strip().upper()
+    print(f"DOC: {doc}")
+    print(answer)
+
+    return answer.startswith("YES")
 
 def checkSupported(docs, query, answer):
-    prompt = f"""You are a fact-checker. If the information(s) in the answer were also stated in the docuemnts, return yes; otherwise, return no.\n
+    system_prompt = f"""
+    You are an expert fact-checker. If the information(s) in the answer were also stated in the documents, return YES; otherwise, return NO.\n
     Evaluate the answer in the context of the user question and the retrieved documents.\n
-    Output only yes or no.\n
-    
+    Output **only** YES or NO.
+    """
+    user_prompt = f"""
     User Question: {query}\n
     Answer: {answer}\n
     Retrieved Documents: {docs}
@@ -96,44 +126,249 @@ def checkSupported(docs, query, answer):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "user", "content": prompt}
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
         ],
         temperature=0.12
     )
-    return 'yes' in response.choices[0].message.content.strip().lower()
+    answer = response.choices[0].message.content.strip().upper()
+    return answer.startswith("YES")
 
 
-def decomposeToSubqueries(question):
-    prompt = f"""Your task is to effectively decompose complex, multihop questions into simpler, manageable sub-questions or tasks. This process involves breaking down a question that requires
-    information from multiple sources or steps into smaller, more direct questions that can be
-    answered individually.
-    Here’s how you should approach this:
-    Analyze the Question: Carefully read the multihop question to understand its different
-    components. Identify what specific pieces of information are needed to answer the main
-    question. Ensure that each subsequent question follows from the previous one and is self-contained and be capable of being
-    answered on its own. Also note that the questions you will generate will be used for retrieval purposes, so you can generate more direct questions so that we can retrieve the related chunks from those.
-    Provide two sub-questions.
-    Here is the question for you to break up: "{question}" 
-    Give the questions in the following format:
-    {{"questions": ["Question 1","Question 2"]}}."""
+def simpleDecompose(question: str):
+    """
+    Break a (possibly multi-hop) query into two self-contained sub-questions
+    that can help with document retrieval.
+
+    Returns: list[str]  # exactly two questions, or [] on failure
+    """
+    system_prompt = """
+    You are an expert query-decomposition assistant.
+
+    GOAL
+    Split the user’s information need into TWO independent, self-contained
+    sub-questions that, when answered, together resolve the original query.
+
+    GUIDELINES
+    1. Each sub-question must be answerable on its own (no pronouns, no “the company”).
+    2. Maintain chronological or logical order if needed.
+    3. Output **exactly** the JSON object below—no extra keys, no comments, no text.
+    4. Even if the original query is single-hop, return two subquestions which are rephrasings or different aspects of the same question.
+
+    FORMAT 
+    {"subquestions": ["Question 1", "Question 2"]}
+    """.strip()
+
+    user_prompt = f"""
+    Original query:
+    {question}
+
+    Decompose it now and output JSON.
+    """.strip()
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt}
+        ],
+        temperature=0.1
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    try:
+        data = json.loads(raw)
+        return data.get("subquestions", [])
+    except json.JSONDecodeError as err:
+        print("Failed to parse JSON from model:", err, "\nRaw output:", raw)
+        return []
+
+def decomposeToSubqueries(question: str):
+    return classifyAndDecompose(question)
+
+
+def classifyAndDecompose(question: str):
+    """
+    Returns a dict:
+      {
+        "type": "single" | "bridging" | "intersection" | "comparison" | "composition",
+        "subquestions": [q1, q2],
+        "bridge_template": "...{answer_to_q1}..."  # only for bridging
+      }
+    """
+    system = """
+    You are an expert question analyst. 
+    Classify the question as:
+    - single            (can be answered in one hop)
+    - bridging          (needs an entity/value from Q1 to answer Q2)
+    - intersection      (needs entities satisfying multiple constraints)
+    - comparison        (needs comparing two entities)
+    - composition       (needs aggregating different attributes)
+    Then, if not single, produce *TWO* sub-questions that make the reasoning explicit. 
+    If type is bridging, put the **second** question as a template containing 
+    "{answer_to_q1}" where the answer of the first question should be inserted. 
+    Return **ONLY** JSON with keys type, subquestions, bridge_template."
+
+    ### EXAMPLES
+    <example>
+    Q: What was Akbank’s net profit in 2024?
+    A:
+    {
+    "type": "single",
+    "subquestions": ["What was Akbank’s net profit in 2024?"],
+    "bridge_template": null
+    }
+    </example>
+
+    <example>
+    Q: Who is the current CEO of the company whose BIST ticker symbol is TCELL?
+    A:
+    {
+    "type": "bridging",
+    "subquestions": [
+        "Which company has the BIST ticker symbol TCELL?",
+        "Who is the current CEO of {answer_to_q1}?"
+    ],
+    "bridge_template": "Who is the current CEO of {answer_to_q1}?"
+    }
+    </example>
+
+    <example>
+    Q: Which BIST100 companies both produce automotive parts and reported a dividend yield above 5 % in 2024?
+    A:
+    {
+    "type": "intersection",
+    "subquestions": [
+        "Which BIST100 companies reported a dividend yield above 5 % in 2024?",
+        "Which BIST100 companies produce automotive parts?"
+    ],
+    "bridge_template": null
+    }
+    </example>
+
+    <example>
+    Q: Which had the higher market capitalisation at the end of 2024, Koç Holding or Sabancı Holding?
+    A:
+    {
+    "type": "comparison",
+    "subquestions": [
+        "What was Koç Holding’s market capitalisation at the end of 2024?",
+        "What was Sabancı Holding’s market capitalisation at the end of 2024?"
+    ],
+    "bridge_template": null
+    }
+    </example>
+
+    <example>
+    Q: Give me the 2024 revenueand net profit margin of Ereğli Demir Çelik.
+    A:
+    {
+    "type": "composition",
+    "subquestions": [
+        "What was Ereğli Demir Çelik’s revenue in 2024?",
+        "What was Ereğli Demir Çelik’s net profit margin in 2024?"
+    ],
+    "bridge_template": null
+    }
+    </example>
+
+    <example>
+    Q: Which company joined the BIST100 most recently and who is its chairperson?
+    A:
+    {
+    "type": "bridging",
+    "subquestions": [
+        "Which company most recently joined the BIST100 index?",
+        "Who is the chairperson of {answer_to_q1}?"
+    ],
+    "bridge_template": "Who is the chairperson of {answer_to_q1}?"
+    }
+    </example>
+
+    <example>
+    Q: List all BIST100 firms that both operate in telecommunications and have a free-float ratio above 50 %.
+    A:
+    {
+    "type": "intersection",
+    "subquestions": [
+        "Which BIST100 firms have a free-float ratio above 50 %?",
+        "Which BIST100 firms operate in telecommunications?"
+    ],
+    "bridge_template": null
+    }
+    </example>
+
+    <example>
+    Q: Compare the EBITDA margins of Aselsan and Turkish Airlines for FY-2024.
+    A:
+    {
+    "type": "comparison",
+    "subquestions": [
+        "What was Aselsan’s EBITDA margin for FY-2024?",
+        "What was Turkish Airlines’ EBITDA margin for FY-2024?"
+    ],
+    "bridge_template": null
+    }
+    </example>
+
+    <example> 
+    Q: Who is the CEO of the company that raised the largest amount through a Eurobond issuance on Borsa İstanbul in 2024? 
+    A: 
+    { 
+    "type": "bridging", 
+    "subquestions": [ 
+        "Which company raised the largest amount through a Eurobond issuance on Borsa İstanbul in 2024?", 
+        "Who is the CEO of {answer_to_q1}?" 
+    ], 
+    "bridge_template": "Who is the CEO of {answer_to_q1}?" 
+    } 
+    </example> 
     
+    <example> 
+    Q: Which BIST100 constituents both reported a year-over-year increase in gross profit margin and reduced their Scope 1 emissions intensity by at least 10% in FY-2024? 
+    A: 
+    { 
+    "type": "intersection", 
+    "subquestions": [ 
+        "Which BIST100 constituents reduced their Scope 1 emissions intensity by at least 10% in FY-2024?", 
+        "Which BIST100 constituents reported a year-over-year increase in gross profit margin in FY-2024?" 
+    ], 
+    "bridge_template": null 
+    } 
+    </example> 
+
+    <example> 
+    Q: Provide the 2024 revenue growth and net-debt-to-EBITDA ratio of Koç Holding. 
+    A: 
+    { 
+    "type": "composition", 
+    "subquestions": [ 
+        "What was Koç Holding’s revenue growth in 2024?", 
+        "What was Koç Holding’s net-debt-to-EBITDA ratio in 2024?" 
+    ], 
+    "bridge_template": null 
+    } 
+    </example>
+
+    ### END EXAMPLES
+
+    **Note**: In the case of bridging, do not forget to bridge by {answer_to_q1} in the subquestions!
+    """
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.12
+        messages=[{"role": "system", "content": system},
+                  {"role": "user", "content": question}],
+        temperature=0.05
     )
-    
-    # Parse the response and extract questions
+
+    content = response.choices[0].message.content.strip()
     try:
-        content = response.choices[0].message.content
-        # Parse JSON-like structure from the response
-        result = eval(content)  # Assumes response is in expected format
-        return result.get("questions", [])
-    except Exception as e:
-        print(f"Error parsing response: {e}")
-        return []
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        # Fallback: treat as single-hop
+        data = {"type": "single", "subquestions": [question], "bridge_template": None}
+    return data
 
 
 def process_single_hop_query(query, current_date):

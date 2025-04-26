@@ -130,6 +130,7 @@ async def on_message(message : cl.Message):
         "userQuery": message.content,
         "rephrasedUserQuery": "",
         "englishUserQuery": "",
+        "questionType": "single",
         "retrievedDocs": [],
         "relevantDocs": [],
         "pastMessages": cl.chat_context.to_openai()[-5:],
@@ -138,6 +139,8 @@ async def on_message(message : cl.Message):
         "turkishAnswer": "",
         "isDecomposed": False,
         "decomposedQueries": [],
+        "bridgeTemplate": None,
+        "bridgeResolved": False,
         "answerNotFound": False,
         "comeFrom": "",
         "finalAnswer": ""
@@ -171,12 +174,18 @@ async def on_message(message : cl.Message):
                             "Bildirim isteğinizi aldım! İlgili gelişmeleri takip edip size haber vereceğim."
                         ).send()
                         break
+                elif node_name == "classifyDecomposeQuestion":
+                    step.input = f"User query: {updated_state['englishUserQuery']}"
+                    step.output = f"Decomposed Queries: {updated_state['decomposedQueries']}"
                 elif node_name == "retrieval":
                     inp = "Retrieved Documents:\n\n"
                     for i, doc in enumerate(updated_state['retrievedDocs']):
                         inp += f"Document {i+1})\n{doc}\n\n"
                     step.input = inp
                     step.output = "Retrieval is done."
+                elif node_name == "resolveBridge":
+                    step.input = f"Bridge Template: {updated_state['bridgeTemplate']}"
+                    step.output = f"Retrieved Docs: {updated_state['retrievedDocs']}"
                 elif node_name == "relevancyCheck":
                     inp = "Relevant Documents:\n\n"
                     for i, doc in enumerate(updated_state['relevantDocs']):
