@@ -33,7 +33,7 @@ async def chat_endpoint(
         "answerNotFound": False,
         "comeFrom": "",
         "finalAnswer": ""
-    } """
+    } 
 
     # 2) Run the pipeline and get back the finalAnswer
     answer = await run_pipeline_and_get_answer(initial_state)
