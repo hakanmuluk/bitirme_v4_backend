@@ -5,6 +5,7 @@ from bson import ObjectId
 from gridfs import GridFS, NoFile
 from datetime import datetime
 from db.mongo import reportDB, users_collection
+from urllib.parse import quote
 
 fs = GridFS(reportDB)
 router = APIRouter()
@@ -103,10 +104,6 @@ def download_pdf(file_id: str, current_user = Depends(get_current_user)):
 
 @router.get("/public/preview/{file_id}")
 def public_preview_pdf(file_id: str):
-    """
-    Publicly serve a PDF inline by its GridFS file_id,
-    without requiring user authentication.
-    """
     oid = ObjectId(file_id)
 
     try:
@@ -114,12 +111,19 @@ def public_preview_pdf(file_id: str):
     except NoFile:
         raise HTTPException(404, "File not found")
 
+    # percent-encode in UTF-8
+    fn = grid_out.filename
+    fn_quoted = quote(fn, safe="")
+    disposition = (
+        f"inline;"
+        f' filename="{fn_quoted}"'          # fallback ASCII-only
+        f"; filename*=UTF-8''{fn_quoted}"   # RFC 5987
+    )
+
     return StreamingResponse(
         grid_out,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename=\"{grid_out.filename}\"'
-        }
+        headers={"Content-Disposition": disposition}
     )
 
 
