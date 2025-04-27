@@ -77,40 +77,25 @@ def translateTurkish(text): # will do it tonight
 
 def relevancy_Check(doc, decomposedQueries, englishUserQuery, isDecomposed): 
 
-    system_prompt = """
-    You are an expert analyst that decides whether a document is relevant to at least one
-    of the given questions. If the document is even PARTIALLY relevant, reply with
-    the single word YES. If it is not relevant at all, reply with the single word NO.
-    Reply in uppercase with no punctuation, explanations, or extra words.
-    """
-
-    questions_block = "\n".join(f"- {q}" for q in decomposedQueries)
-
-    if isDecomposed:
-        questions_block += "\n- " + englishUserQuery
+    prompt = f"""Check if a given document might be related with a given question, even if it is partially related, say yes.
+    Note that, the document will be used for generating an answer to the user question so if you think that the document might be used for generating an answers to user's question, say yes.
+    Give a binary score yes or no score to indicate whether the document is relevant to the question.
+    Output only yes or no\n
     
-    user_prompt = f"""
-    DOCUMENT:
-    {doc}
-
-    QUESTIONS:
-    {questions_block}
+    Document: {doc}
+    User Question: {englishUserQuery}
     """
-
     response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt},
-            ],
-            temperature=0.1
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.12
     )
-
-    answer = response.choices[0].message.content.strip().upper()
-    print(f"DOC: {doc}")
-    print(answer)
-
-    return answer.startswith("YES")
+    print("????????????????????????????")
+    print(response)
+    print("????????????????????????????")
+    return 'yes' in response.choices[0].message.content.strip().lower()
 
 def checkSupported(docs, query, answer):
     system_prompt = f"""
