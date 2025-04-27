@@ -1,17 +1,17 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pymongo import MongoClient
 from bson import ObjectId
-from gridfs import GridFS, NoFile, GridFSBucket
+from gridfs import GridFS, GridFSBucket, NoFile
 from datetime import datetime
-from db.mongo import reportDB, users_collection
 from urllib.parse import quote
 
+from db.mongo import reportDB, users_collection
+
+router = APIRouter()
 fs = GridFS(reportDB)
 bucket = GridFSBucket(reportDB)
-router = APIRouter()
-
 report_collection = reportDB["reports"]
+
 
 async def get_current_user(request: Request):
     email = request.headers.get("x-user-id") or request.cookies.get("x-user-id")
@@ -21,6 +21,7 @@ async def get_current_user(request: Request):
     if not user:
         raise HTTPException(401, "Unauthorized")
     return user
+
 
 @router.get("/reports")
 async def get_user_reports(current_user=Depends(get_current_user)):
@@ -35,25 +36,29 @@ async def get_user_reports(current_user=Depends(get_current_user)):
         for doc in report_collection.find({"email": current_user["email"]})
     ]
 
+
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...), current_user = Depends(get_current_user)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user)
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files allowed.")
     contents = await file.read()
     file_id = fs.put(contents, filename=file.filename)
 
-    # Save metadata + associate with user.email
     report_collection.insert_one({
         "filename": file.filename,
         "file_id": file_id,
         "email": current_user["email"],
-        "uploaded_at":  datetime.utcnow()
+        "uploaded_at": datetime.utcnow()
     })
 
     return {"id": str(file_id)}
 
+
 @router.get("/preview/{file_id}")
-def preview_pdf(file_id: str, current_user = Depends(get_current_user)):
+def preview_pdf(file_id: str, current_user=Depends(get_current_user)):
     oid = ObjectId(file_id)
 
     # enforce ownership
@@ -65,21 +70,27 @@ def preview_pdf(file_id: str, current_user = Depends(get_current_user)):
         raise HTTPException(404, "File not found")
 
     try:
-        grid_out = fs.get(oid)
+        stream = bucket.open_download_stream(oid)
     except NoFile:
         raise HTTPException(404, "File not found")
 
-    return StreamingResponse(
-        grid_out,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="{meta["filename"]}"'
-        }
+    filename = meta["filename"]
+    fn_quoted = quote(filename, safe="")
+    disposition = (
+        f'inline; filename="{fn_quoted}"; '
+        f"filename*=UTF-8''{fn_quoted}"
     )
 
-# ─── Download endpoint (attachment, only if user owns it) ───────
+    chunk_size = 1024 * 256
+    return StreamingResponse(
+        iter(lambda: stream.read(chunk_size), b""),
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition}
+    )
+
+
 @router.get("/download/{file_id}")
-def download_pdf(file_id: str, current_user = Depends(get_current_user)):
+def download_pdf(file_id: str, current_user=Depends(get_current_user)):
     oid = ObjectId(file_id)
 
     # enforce ownership
@@ -91,17 +102,24 @@ def download_pdf(file_id: str, current_user = Depends(get_current_user)):
         raise HTTPException(404, "File not found")
 
     try:
-        grid_out = fs.get(oid)
+        stream = bucket.open_download_stream(oid)
     except NoFile:
         raise HTTPException(404, "File not found")
 
-    return StreamingResponse(
-        grid_out,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="{meta["filename"]}"'
-        }
+    filename = meta["filename"]
+    fn_quoted = quote(filename, safe="")
+    disposition = (
+        f'attachment; filename="{fn_quoted}"; '
+        f"filename*=UTF-8''{fn_quoted}"
     )
+
+    chunk_size = 1024 * 256
+    return StreamingResponse(
+        iter(lambda: stream.read(chunk_size), b""),
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition}
+    )
+
 
 @router.get("/public/preview/{file_id}")
 def public_preview_pdf(file_id: str):
@@ -111,20 +129,16 @@ def public_preview_pdf(file_id: str):
     except NoFile:
         raise HTTPException(404, "File not found")
 
-    # RFC5987‐style UTF-8 filename header
-    fn = stream.filename or "file.pdf"
-    fn_quoted = quote(fn, safe="")
+    filename = stream.filename or "file.pdf"
+    fn_quoted = quote(filename, safe="")
     disposition = (
-        f'inline; filename="{fn_quoted}"; filename*=UTF-8\'\'{fn_quoted}'
+        f'inline; filename="{fn_quoted}"; '
+        f"filename*=UTF-8''{fn_quoted}"
     )
 
-    # yield fixed‐size chunks until EOF
     chunk_size = 1024 * 256
     return StreamingResponse(
         iter(lambda: stream.read(chunk_size), b""),
         media_type="application/pdf",
         headers={"Content-Disposition": disposition}
     )
-
-
-
