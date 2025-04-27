@@ -248,3 +248,23 @@ async def run_pipeline_step_by_step(state: GraphState):
             break
         nexts = get_next_nodes(current_node, state)
         current_node = nexts[0]
+        
+async def run_pipeline_and_get_answer(state: GraphState) -> str:
+    """
+    Runs the entire pipeline from ENTRY_POINT to FINISH_NODE,
+    mutating `state` in-place, and returns state["finalAnswer"].
+    """
+    loop = asyncio.get_running_loop()
+    current = ENTRY_POINT
+
+    while True:
+        func = NODE_FUNCTIONS[current]
+        # run each node function in a thread so that blocking I/O
+        # (Neo4j calls, HTTP, etc.) doesn’t block the event loop
+        state = await loop.run_in_executor(None, func, state)
+
+        if current == FINISH_NODE:
+            return state["finalAnswer"]
+
+        next_nodes = get_next_nodes(current, state)
+        current = next_nodes[0]
