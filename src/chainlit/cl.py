@@ -5,6 +5,8 @@ from urllib.parse import urlparse, parse_qs
 from rag.single_hop import run_pipeline_step_by_step, GraphState
 import asyncio
 from notification.helpers import classify, post_notification 
+from chainlit.input_widget import Switch
+import httpx
 # Logger for header auth
 logger = logging.getLogger("header_auth")
 logger.setLevel(logging.INFO)
@@ -35,6 +37,14 @@ def header_auth_callback(headers: Dict) -> Optional[cl.User]:
 
 @cl.on_chat_start
 async def on_chat_start():
+    settings = await cl.ChatSettings(
+        [
+            Switch(id="ReportGeneration", label="Report Generation", initial=False),
+        ]
+    ).send()
+    report_mode = settings["ReportGeneration"]
+    cl.user_session.set("report_mode", report_mode)
+    
     user = cl.user_session.get("user")
     user_email = user.identifier if user else "Guest"
     cl.user_session.set("user_email", user_email)
@@ -42,80 +52,34 @@ async def on_chat_start():
 
 @cl.on_chat_resume
 async def on_chat_resume():
-    return
+    settings = await cl.ChatSettings(
+        [
+            Switch(
+                id="ReportGeneration",
+                label="Report Generation",
+                # pre-populate with whatever they had before (default False)
+                initial=False
+            ),
+        ]
+    ).send()
 
-""" @cl.on_message
-async def on_message(message):
-    
-    logger.info("🚀 New user message: %s", message.content)
+    # 2) Persist their choice
+    report_mode = settings["ReportGeneration"]
+    cl.user_session.set("report_mode", report_mode)
+    logger.info(f"Resumed session → report_mode={report_mode}")
 
-    # 1) Build the initial graph state
-    state: GraphState = {
-        "userQuery": message.content,
-        "rephrasedUserQuery": "",
-        "englishUserQuery": "",
-        "retrievedDocs": [],
-        "relevantDocs": [],
-        "pastMessages": cl.chat_context.to_openai()[-5:],
-        "answerGenerated": "",
-        "isAnswerSupported": False,
-        "turkishAnswer": "",
-        "isDecomposed": False,
-        "decomposedQueries": [],
-        "answerNotFound": False,
-        "comeFrom": "",
-        "finalAnswer": ""
-    }
-
-    try:
-        # 2) Stream each pipeline node as a Chainlit Step
-        async for node_name, updated_state in run_pipeline_step_by_step(state):
-            async with cl.Step(name=node_name) as step:
-               
-            
-                if node_name == "rephraseForFollowup":
-                    step.input = f"User query: {updated_state['userQuery']}"
-                    step.output = f"Rephrased user query: {updated_state['rephrasedUserQuery']}"
-
-                elif node_name == "translateToEnglish":
-                    step.input = f"Before translation: {updated_state['rephrasedUserQuery']}"
-                    step.output = f"After translation: {updated_state['englishUserQuery']}"
-                elif node_name == "retrieval":
-                    inp = "Retrieved Documents:\n\n"
-                    for i, doc in enumerate(updated_state['retrievedDocs']):
-                        inp += f"Document {i+1})\n{doc}\n\n"
-                    step.input = inp
-                   
-                    step.output = "Retrieval is done."
-                elif node_name == "relevancyCheck":
-                    inp = "Relevant Documents:\n\n"
-                    for i, doc in enumerate(updated_state['relevantDocs']):
-                        inp += f"Document {i+1})\n{doc}\n\n"
-                    step.input = inp
-                    step.output = "Relevancy check is done."
-                elif node_name == "generateAnswer":
-                    step.output = f"Generated answer: {updated_state['answerGenerated']}"
-                elif node_name == "supportednessCheck":
-                    step.output = f"Answer supported: {updated_state['isAnswerSupported']}"
-                elif node_name == "translateToTurkish":
-                    step.input = f"Answer before translation: {updated_state['answerGenerated']}"
-                    step.output = f"Translated answer: {updated_state['turkishAnswer']}"
-                elif node_name == "decompose":
-                    inp = "Generated subqueries:\n\n"
-                    for i, q in enumerate(updated_state['decomposedQueries']):
-                        inp += f"Query {i+1})\n{q}\n\n"
-                    step.input = inp
-                    step.output = "Query is decomposed into subqueries"
-                elif node_name == "end":
-                    step.output = f"Final answer is: {updated_state['finalAnswer']}"
-
-        # 3) Send the final answer
-        final = updated_state.get('finalAnswer', 'Üzgünüm, bir cevap üretilmedi.')
-        await cl.Message(content=final, author="Assistant").send()
-
-    except Exception as e:
-        logger.exception("Pipeline error")
-        await cl.Message(content=f"🚨 An error occurred: {e}", author="System").send()  """
+@cl.on_settings_update
+async def handle_settings_update(settings):
+    """
+    Called whenever the user changes any ChatSettings widget.
+    Persist the latest ReportGeneration value in the session.
+    """
+    # Extract the switch value by its id
+    report_mode = settings.get("ReportGeneration", False)
+    # Store it for later retrieval
+    cl.user_session.set("report_mode", report_mode)
+    # (Optional) Log or notify
+    logger.info(f"Settings updated → report_mode={report_mode}")
 
 @cl.on_message
 async def on_message(message : cl.Message):
@@ -124,6 +88,47 @@ async def on_message(message : cl.Message):
     while offloading processing to a thread pool.
     """
     logger.info("🚀 New user message: %s", message.content)
+
+    logger.info("🚀 New user message: %s", message.content)
+    report_mode = cl.user_session.get("report_mode", False)
+    user_email = cl.user_session.get("user_email", "guest@example.com")
+
+    if report_mode:
+        logger.info("📝 Running in REPORT GENERATION mode")
+
+        # 1) Call your FastAPI report-generation endpoint
+        async with cl.Step(name="Rapor hazırlanıyor…"):
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
+                    json={
+                        "reportGenerationQuery": message.content,
+                        "username": user_email
+                    },
+                    timeout=3000.0
+                )
+            resp.raise_for_status()
+            payload = resp.json()
+            file_id = payload.get("file_id")
+        cl.Step(name = "Raporunuz hazırlandı:")
+        if not file_id:
+            await cl.Message(
+                content="❌ Üzgünüm, rapor oluşturulamadı (file_id eksik)."
+            ).send()
+            return
+
+        pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
+        pdf = cl.Pdf(
+            name="Your Financial Report",
+            url=pdf_url,
+            display="inline"
+        )
+        await cl.Message(
+            content="📄 İşte raporunuz:", 
+            elements=[pdf]
+        ).send()
+
+        return
 
     # 1) Build the initial graph state
     state: GraphState = {
