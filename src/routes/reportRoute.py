@@ -101,4 +101,26 @@ def download_pdf(file_id: str, current_user = Depends(get_current_user)):
         }
     )
 
+@router.get("/public/preview/{file_id}")
+def public_preview_pdf(file_id: str):
+    """
+    Publicly serve a PDF inline by its GridFS file_id,
+    without requiring user authentication.
+    """
+    oid = ObjectId(file_id)
+
+    try:
+        grid_out = fs.get(oid)
+    except NoFile:
+        raise HTTPException(404, "File not found")
+
+    return StreamingResponse(
+        grid_out,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename=\"{grid_out.filename}\"'
+        }
+    )
+
+
 
