@@ -2,12 +2,13 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pymongo import MongoClient
 from bson import ObjectId
-from gridfs import GridFS, NoFile
+from gridfs import GridFS, NoFile, GridFSBucket
 from datetime import datetime
 from db.mongo import reportDB, users_collection
 from urllib.parse import quote
 
 fs = GridFS(reportDB)
+bucket = GridFSBucket(reportDB)
 router = APIRouter()
 
 report_collection = reportDB["reports"]
@@ -105,23 +106,22 @@ def download_pdf(file_id: str, current_user = Depends(get_current_user)):
 @router.get("/public/preview/{file_id}")
 def public_preview_pdf(file_id: str):
     oid = ObjectId(file_id)
-
     try:
-        grid_out = fs.get(oid)
+        stream = bucket.open_download_stream(oid)
     except NoFile:
         raise HTTPException(404, "File not found")
 
-    # percent-encode in UTF-8
-    fn = grid_out.filename
+    # RFC5987‐style UTF-8 filename header
+    fn = stream.filename or "file.pdf"
     fn_quoted = quote(fn, safe="")
     disposition = (
-        f"inline;"
-        f' filename="{fn_quoted}"'          # fallback ASCII-only
-        f"; filename*=UTF-8''{fn_quoted}"   # RFC 5987
+        f'inline; filename="{fn_quoted}"; filename*=UTF-8\'\'{fn_quoted}'
     )
 
+    # yield fixed‐size chunks until EOF
+    chunk_size = 1024 * 256
     return StreamingResponse(
-        grid_out,
+        iter(lambda: stream.read(chunk_size), b""),
         media_type="application/pdf",
         headers={"Content-Disposition": disposition}
     )
