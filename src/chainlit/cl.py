@@ -100,7 +100,7 @@ async def on_message(message : cl.Message):
         async with cl.Step(name="Rapor hazırlanıyor…"):
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
+                    "http://investmenthelper-ai-report-service.up.railway.app/generate-report",
                     json={
                         "reportGenerationQuery": message.content,
                         "username": user_email
