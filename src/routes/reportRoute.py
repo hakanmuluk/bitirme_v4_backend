@@ -4,13 +4,24 @@ from bson import ObjectId
 from gridfs import GridFS, GridFSBucket, NoFile
 from datetime import datetime
 from urllib.parse import quote
-
+import re
+import unicodedata
+from pathlib import Path
 from db.mongo import reportDB, users_collection
 
 router = APIRouter()
 fs = GridFS(reportDB)
 bucket = GridFSBucket(reportDB)
 report_collection = reportDB["reports"]
+
+def sanitize_filename(filename: str) -> str:
+    # 1) Normalize unicode → NFKD, strip accents
+    name = unicodedata.normalize("NFKD", filename)
+    name = name.encode("ascii", "ignore").decode("ascii")
+    # 2) Only allow alphanumerics, dot, underscore or hyphen; replace the rest
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+    # 3) Drop any path components (just in case)
+    return Path(name).name
 
 
 async def get_current_user(request: Request):
@@ -42,13 +53,17 @@ async def upload_pdf(
     file: UploadFile = File(...),
     current_user=Depends(get_current_user)
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files allowed.")
+    # Sanitize the incoming filename
+    safe_name = sanitize_filename(file.filename)
+    # Force a .pdf extension
+    if not safe_name.lower().endswith(".pdf"):
+        safe_name = safe_name + ".pdf"
+
     contents = await file.read()
-    file_id = fs.put(contents, filename=file.filename)
+    file_id = fs.put(contents, filename=safe_name)
 
     report_collection.insert_one({
-        "filename": file.filename,
+        "filename": safe_name,
         "file_id": file_id,
         "email": current_user["email"],
         "uploaded_at": datetime.utcnow()
