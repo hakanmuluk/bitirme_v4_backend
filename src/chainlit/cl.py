@@ -97,6 +97,7 @@ async def on_message(message : cl.Message):
         logger.info("📝 Running in REPORT GENERATION mode")
 
         # 1) Call your FastAPI report-generation endpoint
+        print("SENDING REPORT")
         async with cl.Step(name="Rapor hazırlanıyor…"):
             async with httpx.AsyncClient(verify = False, follow_redirects=True) as client:
                 resp = await client.post(
@@ -117,12 +118,25 @@ async def on_message(message : cl.Message):
             ).send()
             return
 
-        pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
+        """pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
         pdf = cl.Pdf(
             name="Your Financial Report",
             url=pdf_url,
             display="inline"
+        )"""
+        print("REPORT WAS SENT")
+        async with httpx.AsyncClient(http2=False, verify=False) as client:
+            pdf_resp = await client.get(pdf_url, timeout=120.0)
+        pdf_resp.raise_for_status()
+        pdf_bytes = pdf_resp.content          # raw bytes of the PDF
+        
+        pdf_element = cl.Pdf(
+            name="Finansal Raporunuz",
+            content=pdf_bytes,               #  ▼ use `content`, not `url`
+            display="inline"
         )
+
+
         await cl.Message(
             content="📄 İşte raporunuz:", 
             elements=[pdf]
