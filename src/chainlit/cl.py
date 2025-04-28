@@ -12,29 +12,45 @@ import socket
 import asyncio, requests, json
 
 
-# Monkey‐patch Chainlit’s internal HTTP client to stay on HTTP/1.1 and skip cert checks.
-cl.http_client = lambda: httpx.AsyncClient(
-    http2=False,     # force HTTP/1.1
-    verify=False,    # skip TLS verification
-    timeout=600      # plenty of time for long‐running steps
-)
+async def call_report_polling(query: str, username: str) -> str:
+    """
+    Starts a report job, polls status until ready, then returns file_id.
+    """
+    # 1) Kick off the job
+    start = requests.post(
+        f"{REPORT_BASE}/generate-report",
+        json={"reportGenerationQuery": query, "username": username},
+        timeout=10,
+        verify=False
+    )
+    start.raise_for_status()
+    job_id = start.json().get("job_id")
+    if not job_id:
+        raise RuntimeError("Failed to start report job")
 
-async def call_report_sync(user_query: str, user_email: str) -> str:
-    """Runs requests.post() in a background thread → returns file_id."""
-    def _call():
-        r = requests.post(
-            "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
-            json={
-                "reportGenerationQuery": user_query,
-                "username": user_email,
-            },
-            timeout=3000,
-            verify=False
-        )
-        r.raise_for_status()
-        return r.json()["file_id"]
+    # 2) Poll status
+    status_url = f"{REPORT_BASE}/report-status/{job_id}"
+    result_url = f"{REPORT_BASE}/report-result/{job_id}"
+    for _ in range(40):  # up to ~2 minutes
+        resp = requests.get(status_url, timeout=10, verify=False)
+        resp.raise_for_status()
+        state = resp.json().get("state")
+        if state == "ready":
+            break
+        if state == "error":
+            detail = resp.json().get("error", "Unknown error")
+            raise RuntimeError(f"Report job error: {detail}")
+        await asyncio.sleep(3)
+    else:
+        raise RuntimeError("Report generation timed out")
 
-    return await asyncio.to_thread(_call)
+    # 3) Fetch result
+    res = requests.get(result_url, timeout=10, verify=False)
+    res.raise_for_status()
+    file_id = res.json().get("file_id")
+    if not file_id:
+        raise RuntimeError("No file_id returned")
+    return file_id
     
 # Logger for header auth
 logger = logging.getLogger("header_auth")
@@ -123,45 +139,30 @@ async def on_message(message : cl.Message):
     user_email = cl.user_session.get("user_email", "guest@example.com")
 
     if report_mode:
-        logger.info("📝 Running in REPORT GENERATION mode")
-
-        # 1) Call your FastAPI report-generation endpoint
-        print("SENDING REPORT")
-
         async with cl.Step(name="Rapor hazırlanıyor…"):
-            file_id = await call_report_sync(message.content, user_email)
-            cl.Step(name = "Raporunuz hazırlandı:")
+            file_id = await call_report_polling(message.content, user_email)
         if not file_id:
             await cl.Message(
                 content="❌ Üzgünüm, rapor oluşturulamadı (file_id eksik)."
             ).send()
             return
 
-        """pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
-        pdf = cl.Pdf(
-            name="Your Financial Report",
-            url=pdf_url,
-            display="inline"
-        )"""
-        print("REPORT WAS SENT")
-        pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
-        async with httpx.AsyncClient(http2=False, verify=False) as client:
+        # Fetch PDF bytes and send inline
+        pdf_url = (
+            f"https://investmenthelper-ai-backend.up.railway.app"
+            f"/api/report/public/preview/{file_id}"
+        )
+        async with httpx.AsyncClient() as client:
             pdf_resp = await client.get(pdf_url, timeout=120.0)
         pdf_resp.raise_for_status()
-        pdf_bytes = pdf_resp.content          # raw bytes of the PDF
-        
+        pdf_bytes = pdf_resp.content
+
         pdf_element = cl.Pdf(
             name="Finansal Raporunuz",
-            content=pdf_bytes,               #  ▼ use `content`, not `url`
+            content=pdf_bytes,
             display="inline"
         )
-
-
-        await cl.Message(
-            content="📄 İşte raporunuz:", 
-            elements=[pdf]
-        ).send()
-
+        await cl.Message(content="📄 İşte raporunuz:", elements=[pdf_element]).send()
         return
 
     # 1) Build the initial graph state
