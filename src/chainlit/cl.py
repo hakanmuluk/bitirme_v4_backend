@@ -162,7 +162,7 @@ async def on_message(message : cl.Message):
         pdf = cl.Pdf(
             name="Finansal Raporunuz",
             content=pdf_bytes,    # ← embed raw bytes
-            display="inline"
+            display="page"
         )
         await cl.Message(content="📄 İşte raporunuz:", elements=[pdf]).send()
 
