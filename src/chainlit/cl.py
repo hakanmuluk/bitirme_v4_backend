@@ -118,7 +118,7 @@ async def on_message(message : cl.Message):
 
         # 1) Call your FastAPI report-generation endpoint
         print("SENDING REPORT")
-        ipv4_transport = httpx.AsyncHTTPTransport(family=socket.AF_INET)
+
         async with cl.Step(name="Rapor hazırlanıyor…"):
             file_id = await call_report_sync(message.content, user_email)
             cl.Step(name = "Raporunuz hazırlandı:")
