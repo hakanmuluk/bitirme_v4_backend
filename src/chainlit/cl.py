@@ -99,14 +99,18 @@ async def on_message(message : cl.Message):
         # 1) Call your FastAPI report-generation endpoint
         print("SENDING REPORT")
         async with cl.Step(name="Rapor hazırlanıyor…"):
-            async with httpx.AsyncClient(verify = False, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                    http2=False,     
+                    verify=False,       
+                    follow_redirects=True,
+                    timeout=3000.0,
+            ) as client:
                 resp = await client.post(
                     "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
                     json={
                         "reportGenerationQuery": message.content,
                         "username": user_email
                     },
-                    timeout=3000.0,
                 )
             resp.raise_for_status()
             payload = resp.json()
