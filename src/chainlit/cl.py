@@ -100,10 +100,7 @@ async def on_message(message : cl.Message):
         print("SENDING REPORT")
         async with cl.Step(name="Rapor hazırlanıyor…"):
             async with httpx.AsyncClient(
-                    http2=False,     
-                    verify=False,       
-                    follow_redirects=True,
-                    timeout=3000.0,
+                    timeout=None
             ) as client:
                 resp = await client.post(
                     #"https://investmenthelper-ai-report-service.up.railway.app/generate-report",
