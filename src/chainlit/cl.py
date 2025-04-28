@@ -15,7 +15,7 @@ async def call_report_sync(user_query: str, user_email: str) -> str:
     """Runs requests.post() in a background thread → returns file_id."""
     def _call():
         r = requests.post(
-            REPORT_URL,
+            "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
             json={
                 "reportGenerationQuery": user_query,
                 "username": user_email,
