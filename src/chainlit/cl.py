@@ -154,8 +154,8 @@ async def on_message(message : cl.Message):
             f"https://investmenthelper-ai-backend.up.railway.app"
             f"/api/report/public/preview/{file_id}"
         )
-        pdf = cl.Pdf(name="Finansal Raporunuz", url=pdf_url, display="side")
-        await cl.Message("📄 İşte raporunuz:", elements=[pdf]).send()
+        pdf_cl = cl.Pdf(name="Finansal Raporunuz", url=pdf_url, display="side")
+        await cl.Message(content = "Finansal Raporunuz:", elements=[pdf_cl]).send()
         return
 
     # 1) Build the initial graph state
