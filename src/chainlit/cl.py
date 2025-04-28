@@ -7,6 +7,7 @@ import asyncio
 from notification.helpers import classify, post_notification 
 from chainlit.input_widget import Switch
 import httpx
+import socket
 # Logger for header auth
 logger = logging.getLogger("header_auth")
 logger.setLevel(logging.INFO)
@@ -98,8 +99,10 @@ async def on_message(message : cl.Message):
 
         # 1) Call your FastAPI report-generation endpoint
         print("SENDING REPORT")
+        ipv4_transport = httpx.AsyncHTTPTransport(family=socket.AF_INET)
         async with cl.Step(name="Rapor hazırlanıyor…"):
             async with httpx.AsyncClient(
+                    transport = ipv4_transport,
                     timeout=None
             ) as client:
                 resp = await client.post(
