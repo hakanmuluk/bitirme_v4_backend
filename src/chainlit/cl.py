@@ -8,6 +8,25 @@ from notification.helpers import classify, post_notification
 from chainlit.input_widget import Switch
 import httpx
 import socket
+
+import asyncio, requests, json
+
+async def call_report_sync(user_query: str, user_email: str) -> str:
+    """Runs requests.post() in a background thread → returns file_id."""
+    def _call():
+        r = requests.post(
+            REPORT_URL,
+            json={
+                "reportGenerationQuery": user_query,
+                "username": user_email,
+            },
+            timeout=3000,     # seconds
+        )
+        r.raise_for_status()
+        return r.json()["file_id"]
+
+    return await asyncio.to_thread(_call)
+    
 # Logger for header auth
 logger = logging.getLogger("header_auth")
 logger.setLevel(logging.INFO)
@@ -101,22 +120,8 @@ async def on_message(message : cl.Message):
         print("SENDING REPORT")
         ipv4_transport = httpx.AsyncHTTPTransport(family=socket.AF_INET)
         async with cl.Step(name="Rapor hazırlanıyor…"):
-            async with httpx.AsyncClient(
-                    transport = ipv4_transport,
-                    timeout=None
-            ) as client:
-                resp = await client.post(
-                    #"https://investmenthelper-ai-report-service.up.railway.app/generate-report",
-                    "http://investmenthelper-ai-report-gener.railway.internal:8000/generate-report",
-                    json={
-                        "reportGenerationQuery": message.content,
-                        "username": user_email
-                    },
-                )
-            resp.raise_for_status()
-            payload = resp.json()
-            file_id = payload.get("file_id")
-        cl.Step(name = "Raporunuz hazırlandı:")
+            file_id = await call_report_sync(message.content, user_email)
+            cl.Step(name = "Raporunuz hazırlandı:")
         if not file_id:
             await cl.Message(
                 content="❌ Üzgünüm, rapor oluşturulamadı (file_id eksik)."
