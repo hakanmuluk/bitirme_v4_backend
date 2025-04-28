@@ -33,7 +33,7 @@ async def call_report_polling(query: str, username: str) -> str:
     # 2) Poll status
     status_url = f"{REPORT_BASE}/report-status/{job_id}"
     result_url = f"{REPORT_BASE}/report-result/{job_id}"
-    for _ in range(40):  # up to ~2 minutes
+    for _ in range(400):  # up to ~2 minutes
         resp = requests.get(status_url, timeout=10, verify=False)
         resp.raise_for_status()
         state = resp.json().get("state")
