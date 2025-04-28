@@ -154,17 +154,17 @@ async def on_message(message : cl.Message):
             f"https://investmenthelper-ai-backend.up.railway.app"
             f"/api/report/public/preview/{file_id}"
         )
+        async with httpx.AsyncClient(verify=False) as client:
+            resp = await client.get(pdf_url, timeout=500.0)
+        resp.raise_for_status()
+        pdf_bytes = resp.content
+        
         pdf = cl.Pdf(
             name="Finansal Raporunuz",
-            url=pdf_url,     # <-- pass the URL directly here
-            display="inline"    # embed it in the chat; use "popup" to open in a new tab
+            content=pdf_bytes,    # ← embed raw bytes
+            display="inline"
         )
-
-        await cl.Message(
-            content="📄 İşte raporunuz:", 
-            elements=[pdf]
-        ).send()
-        return
+        await cl.Message(content="📄 İşte raporunuz:", elements=[pdf]).send()
 
     # 1) Build the initial graph state
     state: GraphState = {
