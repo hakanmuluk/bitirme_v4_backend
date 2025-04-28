@@ -11,6 +11,8 @@ import socket
 
 import asyncio, requests, json
 
+REPORT_BASE = "https://investmenthelper-ai-report-service.up.railway.app"
+
 
 async def call_report_polling(query: str, username: str) -> str:
     """
