@@ -146,14 +146,25 @@ def public_preview_pdf(file_id: str):
 
     filename = stream.filename or "file.pdf"
     fn_quoted = quote(filename, safe="")
+
     disposition = (
         f'inline; filename="{fn_quoted}"; '
         f"filename*=UTF-8''{fn_quoted}"
     )
 
-    chunk_size = 1024 * 256
+    headers = {
+        # allow any origin (Chainlit uses fetch/iframe to embed)
+        "Access-Control-Allow-Origin": "*",
+        # explicit inline disposition
+        "Content-Disposition": disposition,
+        # override any frame‐blocking defaults
+        "X-Frame-Options": "ALLOWALL",
+        # (optional) if you have CSP in front:
+        "Content-Security-Policy": "frame-ancestors *"
+    }
+
     return StreamingResponse(
-        iter(lambda: stream.read(chunk_size), b""),
+        iter(lambda: stream.read(256*1024), b""),
         media_type="application/pdf",
-        headers={"Content-Disposition": disposition}
+        headers=headers,
     )
