@@ -138,15 +138,7 @@ def download_pdf(file_id: str, current_user=Depends(get_current_user)):
 
 @router.get("/public/preview/{file_id}")
 def public_preview_pdf(file_id: str):
-    oid = ObjectId(file_id)
-    try:
-        stream = bucket.open_download_stream(oid)
-    except NoFile:
-        raise HTTPException(404, "File not found")
-
-    filename = stream.filename or "file.pdf"
-    fn_quoted = quote(filename, safe="")
-
+    # … open your GridFS stream …
     disposition = (
         f'inline; filename="{fn_quoted}"; '
         f"filename*=UTF-8''{fn_quoted}"
@@ -154,10 +146,9 @@ def public_preview_pdf(file_id: str):
 
     headers = {
         "Content-Disposition": disposition,
-        # only valid for same-origin embedding:
-        "X-Frame-Options": "SAMEORIGIN",
-        # optional CSP reinforcement:
-        "Content-Security-Policy": "frame-ancestors 'self'"
+        # still allow cross-origin fetch if needed:
+        "Access-Control-Allow-Origin": "*",
+        # <-- remove X-Frame-Options and CSP entirely
     }
 
     return StreamingResponse(
