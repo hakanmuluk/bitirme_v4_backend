@@ -104,7 +104,7 @@ async def on_message(message : cl.Message):
             ) as client:
                 resp = await client.post(
                     #"https://investmenthelper-ai-report-service.up.railway.app/generate-report",
-                    "http://investmenthelper-ai-report-gener:8000/generate-report",
+                    "http://investmenthelper-ai-report-gener.railway.internal:8000/generate-report",
                     json={
                         "reportGenerationQuery": message.content,
                         "username": user_email
@@ -127,6 +127,7 @@ async def on_message(message : cl.Message):
             display="inline"
         )"""
         print("REPORT WAS SENT")
+        pdf_url = f"https://investmenthelper-ai-backend.up.railway.app/api/report/public/preview/{file_id}"
         async with httpx.AsyncClient(http2=False, verify=False) as client:
             pdf_resp = await client.get(pdf_url, timeout=120.0)
         pdf_resp.raise_for_status()
