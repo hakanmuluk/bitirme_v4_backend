@@ -138,21 +138,34 @@ def download_pdf(file_id: str, current_user=Depends(get_current_user)):
 
 @router.get("/public/preview/{file_id}")
 def public_preview_pdf(file_id: str):
-    # … open your GridFS stream …
+    # 1) Open the GridFS stream
+    oid = ObjectId(file_id)
+    try:
+        stream = bucket.open_download_stream(oid)
+    except NoFile:
+        raise HTTPException(404, "File not found")
+
+    # 2) Derive and quote the filename
+    filename  = stream.filename or "file.pdf"
+    fn_quoted = quote(filename, safe="")
+
+    # 3) Build inline disposition
     disposition = (
         f'inline; filename="{fn_quoted}"; '
         f"filename*=UTF-8''{fn_quoted}"
     )
 
+    # 4) Expose only CORS + inline disposition
     headers = {
         "Content-Disposition": disposition,
-        # still allow cross-origin fetch if needed:
-        "Access-Control-Allow-Origin": "*",
-        # <-- remove X-Frame-Options and CSP entirely
+        "Access-Control-Allow-Origin": "*",  # if you ever fetch it via XHR
+        # no X-Frame-Options, no CSP frame-ancestors
     }
 
+    # 5) Stream the PDF
+    chunk_size = 256 * 1024
     return StreamingResponse(
-        iter(lambda: stream.read(256*1024), b""),
+        iter(lambda: stream.read(chunk_size), b""),
         media_type="application/pdf",
         headers=headers,
     )
