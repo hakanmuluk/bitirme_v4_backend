@@ -106,7 +106,8 @@ async def on_message(message : cl.Message):
                     timeout=3000.0,
             ) as client:
                 resp = await client.post(
-                    "https://investmenthelper-ai-report-service.up.railway.app/generate-report",
+                    #"https://investmenthelper-ai-report-service.up.railway.app/generate-report",
+                    "http://investmenthelper-ai-report-gener:8000",
                     json={
                         "reportGenerationQuery": message.content,
                         "username": user_email
