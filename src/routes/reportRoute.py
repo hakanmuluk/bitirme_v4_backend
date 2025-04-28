@@ -153,14 +153,11 @@ def public_preview_pdf(file_id: str):
     )
 
     headers = {
-        # allow any origin (Chainlit uses fetch/iframe to embed)
-        "Access-Control-Allow-Origin": "*",
-        # explicit inline disposition
         "Content-Disposition": disposition,
-        # override any frame‐blocking defaults
-        "X-Frame-Options": "ALLOWALL",
-        # (optional) if you have CSP in front:
-        "Content-Security-Policy": "frame-ancestors *"
+        # only valid for same-origin embedding:
+        "X-Frame-Options": "SAMEORIGIN",
+        # optional CSP reinforcement:
+        "Content-Security-Policy": "frame-ancestors 'self'"
     }
 
     return StreamingResponse(
