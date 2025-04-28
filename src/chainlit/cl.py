@@ -11,6 +11,14 @@ import socket
 
 import asyncio, requests, json
 
+
+# Monkey‐patch Chainlit’s internal HTTP client to stay on HTTP/1.1 and skip cert checks.
+cl.http_client = lambda: httpx.AsyncClient(
+    http2=False,     # force HTTP/1.1
+    verify=False,    # skip TLS verification
+    timeout=600      # plenty of time for long‐running steps
+)
+
 async def call_report_sync(user_query: str, user_email: str) -> str:
     """Runs requests.post() in a background thread → returns file_id."""
     def _call():
