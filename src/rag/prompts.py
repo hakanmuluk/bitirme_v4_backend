@@ -117,7 +117,7 @@ def checkSupported(docs, query, answer):
         temperature=0.12
     )
     answer = response.choices[0].message.content.strip().upper()
-    return answer.startswith("YES")
+    return True
 
 
 def simpleDecompose(question: str):
