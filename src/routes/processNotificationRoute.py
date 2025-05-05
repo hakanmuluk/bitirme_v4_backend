@@ -19,7 +19,7 @@ class NotificationRequestModel(BaseModel):
     similarity_threshold: float
     chunk_size: int
 
-HIGH_SIM_AUTO_RELEVANT = 0.73
+HIGH_SIM_AUTO_RELEVANT = 0.76
 MAX_CHUNKS_FOR_LLM = 5
 
 @router.post("/process", response_model=dict)

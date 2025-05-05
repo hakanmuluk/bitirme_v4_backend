@@ -55,8 +55,14 @@ def cosine(a: List[float], b: List[float]):
 def summarise(texts: List[str]):
 
     prompt = (
-        "Summarise the following content into ONE concise, self‑contained summary. **OMIT** and **IGNORE** any expression that might corrupt the meaning of the summary such as: 'Notify me', 'Please notify me', 'Tell me', 'Let me know' or similar.\n\n"
-        "Output ONLY the summary:\n\n" + "\n".join(texts[:50])  # safety‑clip
+        "Summarise the following content into ONE concise, self-contained summary. "
+        "**OMIT** and **IGNORE** any expression that might corrupt the meaning of the summary such as: "
+        "'Notify me', 'Please notify me', 'Tell me', 'Let me know' or similar.\n\n"
+        "The summary should be compact — instead of saying 'The content expresses interest in X', just say 'X'. "
+        "Avoid unnecessary phrases and only retain the core idea.\n\n"
+        "Here is the content to summarise:\n\n"
+        + "\n---\n".join(texts) + "\n\n"
+        "Output ONLY the summary."
     )
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -65,7 +71,6 @@ def summarise(texts: List[str]):
     )
     summary = resp.choices[0].message.content.strip()
     return summary, embed(summary)
-
 
 # ──────────────────────────────────────────────────────────── Mongo helpers
 
@@ -94,17 +99,34 @@ def dirty_upwards(start: ObjectId, *, col: Collection = tree_collection, session
 
 
 def refresh_dirty_nodes(*, col: Collection = tree_collection):
-    """Re‑summarise every node whose dirty flag is True, bottom‑up."""
-    dirty_nodes = list(col.find({"dirty": True}))
-    # Sort by depth (deepest first) so children are refreshed before parents.
-    dirty_nodes.sort(key=lambda d: d.get("parent") is None)  # leaves first
-    for doc in dirty_nodes:
+    """Re-summarise every node whose dirty flag is True, bottom-up, via DFS."""
+    # 1. Load all dirty docs into a dict for fast lookup
+    dirty_docs = {
+        doc["_id"]: doc
+        for doc in col.find({"dirty": True}, {"_id":1, "children":1})
+    }
+
+    processed = set()
+
+    def dfs(node_id):
+        # If we’ve already re-summarised this node, skip
+        if node_id in processed:
+            return
+
+        node = dirty_docs[node_id]
+        # 2. First recurse on any dirty children
+        for child_id in node.get("children", []):
+            if child_id in dirty_docs:
+                dfs(child_id)
+
+        # 3. Now all dirty children are up-to-date, so rebuild this node
+        doc = col.find_one({"_id": node_id}, {"children":1})
         if doc["children"]:
             children = [load_node(cid, col=col) for cid in doc["children"]]
             texts = [c["summary"] for c in children]
             summary, emb = summarise(texts)
             col.update_one(
-                {"_id": doc["_id"]},
+                {"_id": node_id},
                 {
                     "$set": {
                         "summary": summary,
@@ -115,8 +137,14 @@ def refresh_dirty_nodes(*, col: Collection = tree_collection):
                 },
             )
         else:
-            col.update_one({"_id": doc["_id"]}, {"$set": {"dirty": False}})
+            # Leaf: just clear the flag
+            col.update_one({"_id": node_id}, {"$set": {"dirty": False}})
 
+        processed.add(node_id)
+
+    # 4. Kick off the DFS from every dirty node
+    for nid in list(dirty_docs):
+        dfs(nid)
 
 # ──────────────────────────────────────────────────────────── core algorithm
 def centroid_shift(child: NodeDoc, new_emb: List[float]) -> float:
@@ -375,7 +403,7 @@ def insert_notification_into_forest(
             print(f"Best root: {best_root['_id']}, sim: {best_sim}")
            
 
-            root_thr, leaf_merge_thr = 0.52, 0.73
+            root_thr, leaf_merge_thr = 0.52, 0.76
             internal_thr = internal_threshold_base
 
             # 1‑a. descend/merge inside best_root
