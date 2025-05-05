@@ -64,7 +64,6 @@ def find_best_leaf_greedy(
     best_leaf, best_sim = None, -1.0
     for root in roots:
         leaf, sim = greedy_descent_to_leaf(root, chunk_emb)
-        print(f"Leaf: {leaf['summary']}, sim: {sim}")
         if leaf.get("requests"):
             first_req = notifications_collection.find_one({"_id": leaf["requests"][0]})
             if first_req and "embedding" in first_req:
