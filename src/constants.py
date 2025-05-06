@@ -5,11 +5,7 @@ bist100 = {
         "processed_industries_sector": {
             "TCELL.IS": "Turkcell İletişim Hizmetleri A.Ş.",
             "AKBNK.IS": "Akbank T.A.Ş.",
-            "KCHOL.IS": "Koç Holding A.Ş.",
-            "FENER.IS": "Fenerbahçe Futbol A.Ş.",
-            "ARCLK.IS": "Arçelik A.Ş.",
-            "ULKER.IS": "Ülker Bisküvi Sanayi A.Ş.",
-            "AEFES.IS": "Anadolu Efes Biracılık ve Malt Sanayi A.Ş."
+            "KCHOL.IS": "Koç Holding A.Ş."
         }
     },
     "BIST & Currencies": {
