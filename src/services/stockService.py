@@ -1,101 +1,112 @@
 # services/stockService.py
 
 import datetime
-from yahooquery import Ticker
-
-def normalize_price(quote):
-    """
-    Adjusts the price if the stock data is in TRY (Turkish Lira) and the price is unusually high,
-    indicating it may be in kuruş (1/1000 of a lira).
-    """
-    price = quote.get('regularMarketPrice', 0)
-    if quote.get('currency') == "TRY" and price > 1000:
-        return price / 1000
-    return price
+import time
+from dateutil.relativedelta import relativedelta
+import yfinance as yf
+import constants
 
 def format_market_cap(num):
     """
-    Returns a formatted string for the market cap number.
+    Formats a raw market capitalization number into a human-readable string.
     """
+    if num is None:
+        return None
     if num >= 1e9:
         return f"{num / 1e9:.2f}B"
     if num >= 1e6:
         return f"{num / 1e6:.2f}M"
     return str(num)
 
-def fetch_stock_data(symbols):
+def fetch_stock_data(symbols, pause=1.0, max_retries=3):
     """
-    Fetches stock data for each symbol from Yahoo Finance using yahooquery.
-    
-    It retrieves:
-      - Quote data (company name, price, day change, market cap)
-      - One-month historical data and year-to-date (YTD) historical data to compute percentage changes.
-    
-    All data is fetched in a few API calls instead of sequential requests.
-    
-    Returns a sorted list (by descending price) of stock data dictionaries.
-    """
-    # Create a Ticker instance for all symbols
-    ticker = Ticker(symbols)
-    
-    # Fetch quote data for all symbols at once.
-    # prices is a dict keyed by each symbol.
-    prices = ticker.price
+    Fetches for each BIST symbol using yfinance:
+      - Current price
+      - Daily % change
+      - 1‑month % change (based on a 30‑day calendar window)
+      - Year‑to‑date % change
+      - Market cap
 
-    now = datetime.datetime.now()
+    Includes a pause between symbols and simple retry on rate‑limit (429) errors.
+    """
+    results = []
+    now = datetime.datetime.utcnow()
+    one_month_ago = now - relativedelta(months=1)
     start_of_year = datetime.datetime(now.year, 1, 1)
 
-    # Fetch historical data in bulk.
-    # The 'period' and 'start' arguments help get the 1-month and YTD data, respectively.
-    hist_1mo = ticker.history(period='1mo', interval='1d')
-    hist_ytd = ticker.history(start=start_of_year, interval='1d')
+    for sym in symbols:
+        yf_sym = f"{sym}.IS"
+        attempts = 0
 
-    # Group the DataFrames by symbol if data was successfully returned.
-    grouped_1mo = {}
-    if not hist_1mo.empty:
-        for symbol, group in hist_1mo.groupby(level=0):
-            grouped_1mo[symbol] = group
-    grouped_ytd = {}
-    if not hist_ytd.empty:
-        for symbol, group in hist_ytd.groupby(level=0):
-            grouped_ytd[symbol] = group
+        while attempts < max_retries:
+            try:
+                # Throttle between requests
+                time.sleep(pause)
 
-    def calc_change(df):
-        """
-        Calculates the percentage change between the first and last valid closing prices in the DataFrame.
-        Expects df to have a 'close' column.
-        """
-        if df is not None and not df.empty:
-            first = df['close'].iloc[0]
-            last = df['close'].iloc[-1]
-            if first:
-                return (last - first) / first
-        return 0
+                # Initialize the Ticker
+                ticker = yf.Ticker(yf_sym)
 
-    results = []
-    for symbol in symbols:
-        try:
-            quote = prices.get(symbol, {})
-            hist_data_1mo = grouped_1mo.get(symbol)
-            hist_data_ytd = grouped_ytd.get(symbol)
+                # Fetch full-year daily history
+                hist = ticker.history(
+                    start=start_of_year.strftime("%Y-%m-%d"),
+                    end=(now + datetime.timedelta(days=1)).strftime("%Y-%m-%d"),
+                    interval="1d"
+                )
+                if hist.empty or len(hist) < 2:
+                    raise Exception("Not enough historical data")
 
-            stock_data = {
-                "ticker": quote.get('symbol', symbol),
-                "company": quote.get('longName') or symbol,
-                "price": normalize_price(quote),
-                "dayChange": quote.get('regularMarketChangePercent'),
-                "monthChange": calc_change(hist_data_1mo),
-                "yearChange": calc_change(hist_data_ytd),
-                "marketCap": format_market_cap(quote.get('marketCap')) if quote.get('marketCap') is not None else None
-            }
-            results.append(stock_data)
-        except Exception as e:
-            print(f"Error fetching {symbol}: {e}")
-            results.append(None)
+                # Compute latest and previous close
+                latest_close = hist["Close"].iloc[-1]
+                prev_close   = hist["Close"].iloc[-2]
+                day_change   = (latest_close - prev_close) / prev_close * 100 if prev_close else None
 
-    # Filter out any failed fetches and sort the results by price in descending order.
-    results = [r for r in results if r is not None]
-    results.sort(key=lambda x: x.get('price', 0), reverse=True)
+                # Compute 1‑month change via a calendar window
+                hist_1mo = ticker.history(
+                    start=one_month_ago.strftime("%Y-%m-%d"),
+                    end=(now + datetime.timedelta(days=1)).strftime("%Y-%m-%d"),
+                    interval="1d"
+                )
+                month_pct = None
+                if not hist_1mo.empty:
+                    first = hist_1mo["Close"].iloc[0]
+                    month_pct = (latest_close - first) / first * 100 if first else None
+
+                # Compute YTD change
+                first_ytd = hist["Close"].iloc[0]
+                ytd_pct   = (latest_close - first_ytd) / first_ytd * 100 if first_ytd else None
+
+                # Fetch market cap from ticker.info
+                info = ticker.info or {}
+                market_cap = info.get("marketCap")
+
+                company_name = constants.bist100["Borsa İstanbul"]["processed_industries_sector"].get(sym, sym)
+
+                results.append({
+                    "ticker": sym,
+                    "company": company_name,
+                    "price": latest_close,
+                    "dayChange": day_change,
+                    "monthChange": month_pct,
+                    "ytdChange": ytd_pct,
+                    "marketCap": format_market_cap(market_cap)
+                })
+                break  # success, exit retry loop
+
+            except Exception as e:
+                err = str(e)
+                # On rate-limit, back off exponentially
+                if "429" in err or "Too Many Requests" in err:
+                    attempts += 1
+                    backoff = pause * (2 ** attempts)
+                    time.sleep(backoff)
+                else:
+                    # Non-retryable error: record it and stop retries
+                    results.append({"ticker": sym, "error": err})
+                    break
+        else:
+            # Exhausted retries
+            results.append({"ticker": sym, "error": f"failed after {max_retries} attempts"})
+
+    # Sort by price descending
+    results.sort(key=lambda x: x.get("price", 0) or 0, reverse=True)
     return results
-
-

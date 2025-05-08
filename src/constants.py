@@ -3,9 +3,10 @@
 bist100 = {
     "Borsa İstanbul": {
         "processed_industries_sector": {
-            "TCELL.IS": "Turkcell İletişim Hizmetleri A.Ş.",
-            "AKBNK.IS": "Akbank T.A.Ş.",
-            "KCHOL.IS": "Koç Holding A.Ş."
+            "TCELL": "Turkcell İletişim Hizmetleri A.Ş.",
+            "AKBNK": "Akbank T.A.Ş.",
+            "KCHOL": "Koç Holding A.Ş.",
+            "GARAN": "Türkiye Garanti Bankası A.Ş.",
         }
     },
     "BIST & Currencies": {
