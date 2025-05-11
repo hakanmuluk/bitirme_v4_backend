@@ -102,11 +102,11 @@ async def process_document_for_notifications(request: NotificationRequestModel):
                 "Regards,\nNotification Team"
             )
 
-            #asyncio.create_task(send_email_notification(email, subject, body))          UNCOMMENT THIS LINE TO SEND EMAILS
+            asyncio.create_task(send_email_notification(email, subject, body))          
             print(f"Sending email to {email}:\n{body}\n")
             emails_sent += 1
 
-        remove_leaf(leaf_id)
+        #remove_leaf(leaf_id)
 
     return {
         "matches_found": len(leaf_to_matches),
